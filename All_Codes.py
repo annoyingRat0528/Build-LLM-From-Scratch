@@ -203,6 +203,7 @@ def tiktoken():
 		and established himself in ---->  a '''
 
 
+from gensim.models.word2vec import keep_vocab_item
 import torch, tiktoken
 from torch.utils.data import Dataset, DataLoader
 
@@ -415,12 +416,12 @@ def positional_embeddings():
 
 
 inputs = torch.tensor([
-	[0.43, 0.15, 0.89],  #Your		(x^1)
+	[0.43, 0.15, 0.89],  #Your              (x^1)
 	[0.55, 0.87, 0.66],  #journey    (x^2)
-	[0.57, 0.85, 0.64],  #starts    	(x^3)
-	[0.22, 0.58, 0.33],  #with    	(x^4)
-	[0.77, 0.25, 0.10],  #one		(x^5)
-	[0.05, 0.80, 0.55]  #step		(x^6)
+	[0.57, 0.85, 0.64],  #starts            (x^3)
+	[0.22, 0.58, 0.33],  #with      (x^4)
+	[0.77, 0.25, 0.10],  #one               (x^5)
+	[0.05, 0.80, 0.55]  #step               (x^6)
 ])
 
 
@@ -591,14 +592,14 @@ tensor([[0.9231, 1.3545, 1.3241, 0.7910, 0.4032, 1.1330],
 	class SelfAttention_v1(nn.Module):
 		def __init__(self,d_in,d_out):
 			super().__init__()
-			self.W_query	=	nn.Parameter(torch.rand(d_in, d_out))
-			self.W_key		=	nn.Parameter(torch.rand(d_in, d_out))
-			self.W_value	=	nn.Parameter(torch.rand(d_in, d_out))
+			self.W_query    =       nn.Parameter(torch.rand(d_in, d_out))
+			self.W_key              =       nn.Parameter(torch.rand(d_in, d_out))
+			self.W_value    =       nn.Parameter(torch.rand(d_in, d_out))
 
 		def forward(self,x):
-			keys = 	x@self.W_key
+			keys =  x@self.W_key
 			queries=x@self.W_query
-			values=	x@self.W_value
+			values= x@self.W_value
 
 			attn_scores = queries@keys.T
 			attn_weights = torch.softmax(
@@ -622,14 +623,14 @@ tensor([[0.2996, 0.8053],
 	class SelfAttention_v2(nn.Module):
 		def __init__(self,d_in,d_out,qkv_bias=False):
 			super().__init__()
-			self.W_query	=	nn.Linear(d_in, d_out, bias=qkv_bias)
-			self.W_key		=	nn.Linear(d_in, d_out, bias=qkv_bias)
-			self.W_value	=	nn.Linear(d_in, d_out, bias=qkv_bias)
+			self.W_query    =       nn.Linear(d_in, d_out, bias=qkv_bias)
+			self.W_key              =       nn.Linear(d_in, d_out, bias=qkv_bias)
+			self.W_value    =       nn.Linear(d_in, d_out, bias=qkv_bias)
 	
 		def forward(self,x):
-			keys = 	self.W_key(x)
+			keys =  self.W_key(x)
 			queries=self.W_key(x)
-			values=	self.W_key(x)
+			values= self.W_key(x)
 	
 			attn_scores = queries@keys.T
 			attn_weights = torch.softmax(
@@ -849,29 +850,251 @@ class MultiHeadAttentionDefenitive(nn.Module):
 		self.dropout=nn.Dropout(dropout)
 		self.register_buffer(
 			"mask",
-			torch.triu(torch.ones(context_length,context_length),diagonal=1)
+			torch.triu(torch.ones(context_length,context_length),
+								 diagonal=1)
 		)
 
-def forward(self,x):
-	b, num_tokens, d_in=x.shape
-	
-	keys=self.W_key(x) #Shape: (b, num_tokens, d_out)
-	queries=self.W_query(x)
-	values=self.W_value(x)
+	def forward(self,x):
+		b, num_tokens, d_in=x.shape
+		
+		keys=self.W_key(x) #Shape: (b, num_tokens, d_out)
+		queries=self.W_query(x)
+		values=self.W_value(x)
 
-	#Unroll last dim: (b, num_tokens, d_out) -> (b, num_tokens, num_heads, head_dim)
-	keys=keys.view(b, num_tokens, self.num_heads, self.head_dim)
-	values=values.view(b, num_tokens, self.num_heads, self.head_dim)
-	queries=queries.view(b, num_tokens, self.num_heads, self.head_dim)
+		#Unroll last dim: (b, num_tokens, d_out) -> (b, num_tokens, num_heads, head_dim)
+		keys=keys.view(b, num_tokens, self.num_heads, self.head_dim)
+		values=values.view(b, num_tokens, self.num_heads, self.head_dim)
+		queries=queries.view(b, num_tokens, self.num_heads, self.head_dim)
 
-	#Transpose: (b, num_tokens, num_heads, head_dim) -> (b, num_heads, num_tokens, head_dim)
-	keys = keys.transpose(1,2)#2号和3号位交换位置
-	queries = queries.transpose(1,2)
-	values = values.transpose(1,2)
+		#Transpose: (b, num_tokens, num_heads, head_dim) -> (b, num_heads, num_tokens, head_dim)
+		keys = keys.transpose(1,2)#2号和3号位交换位置
+		queries = queries.transpose(1,2)
+		values = values.transpose(1,2)
 
-	# Compute scaled dot-product attention, aka self-attention with a causal mask
-	attn_scores = queries @ keys.transpose(2,3) #Dot product of each head
-	
+		# Compute scaled dot-product attention, aka self-attention with a causal mask
+		attn_scores = queries @ keys.transpose(2,3) #Dot product of each head
 
+		#Original mask truncated (缩短) to the number of tokens and converted to boolean
+		mask_bool=self.mask.bool()[:num_tokens, :num_tokens]
+		
+		#Use the mask to fill attention scores
+		attn_scores.masked_fill_(mask_bool, -torch.inf)
+
+		attn_weights = torch.softmax(attn_scores/keys.shape[-1]**0.5, dim=-1)#[-1]as looking at the last dimension (Head dimension)                             dim=-1 as all the columns of a row sum up to 1
+		attn_weights = self.dropout(attn_weights)
+
+		#Shape: (b, num_tokens, num_heads, head_dim)
+		context_vec = (attn_weights @ values).transpose(1,2)
+
+		#Combine heads, where self.d_out = self.num_heads * self.head_dim
+		context_vec = context_vec.contiguous().view(b, num_tokens, self.d_out)#contiguous, same memory block
+		context_vec = self.out_proj(context_vec)#optional projection
+
+		return context_vec
+def utilizeMultiheadAttention():
+	torch.manual_seed(123)
 	
+	inputs = torch.tensor(
+		[[0.43, 0.15, 0.89,0.55, 0.87, 0.66],  
+		[0.57, 0.85, 0.64, 0.22, 0.58, 0.33], 
+		[0.77, 0.25, 0.10, 0.05, 0.80, 0.55]]
+	)
 	
+	batch = torch.stack((inputs, inputs), dim=0)
+	print(batch.shape)
+	
+	batch_size, context_length, d_in = batch.shape
+	d_out=6
+	mha=MultiHeadAttentionDefenitive(d_in, d_out, context_length, 0, num_heads=2)
+	context_vecs=mha(batch)
+	print(context_vecs)
+	print("context_vecs.shape:", context_vecs.shape)
+	'''
+	torch.Size([2, 3, 6])
+	tensor([[[ 0.1569, -0.0873,  0.0210,  0.0215, -0.3243, -0.2518],
+					 [ 0.1117, -0.0547,  0.0406, -0.0213, -0.3251, -0.2993],
+					 [ 0.1196, -0.0491,  0.0318, -0.0635, -0.2788, -0.2578]],
+	
+					[[ 0.1569, -0.0873,  0.0210,  0.0215, -0.3243, -0.2518],
+					 [ 0.1117, -0.0547,  0.0406, -0.0213, -0.3251, -0.2993],
+					 [ 0.1196, -0.0491,  0.0318, -0.0635, -0.2788, -0.2578]]],
+				 grad_fn=<ViewBackward0>)
+	context_vecs.shape: torch.Size([2, 3, 6])
+	'''
+
+#Implementing a GPT model from scratch to generate text
+GPT_CONFIG_124M={
+	"vocab_size": 50257,			#Vocabulary size
+	"context_length": 1024,		#Context length
+	"emb_dim":768,						#Embedding dimension
+	"n_heads": 12,						#Number of attention heads
+	"n_layers": 12,						#NUmber of layers
+	"drop_rate": 0.1,					#Dropouut rate
+	"qkv_bias": False					#Query-Key_Value bias
+}
+
+import torch
+import torch.nn as nn
+
+class DummyGPTModel(nn.Module):
+	def __init__(self, cfg):
+		super().__init__
+		self.tok_emb = nn.Embedding(cfg["vocab_size"], cfg["emb_dim"])#Row, Columns
+		self.pos_emb=nn.Embedding(cfg["context_length"], cfg["emb_dim"])
+		self.drop_emb=nn.Dropout(cfg["drop_rate"])
+
+		#Placeholder for TransformerBlock
+		self.trf_blocks=nn.Sequential(
+			*[DummyTransformerBlock(cfg) for _ in range(cfg["n_layers"])]
+		)
+		#Placeholder for LayerNorm
+		self.final_norm = DummyLayerNorm(cfg["emb_dim"])
+		self.out_head = nn.Linear(
+			cfg["emb_dim"], cfg["vocab_size"], bias=False
+		)
+		
+
+		def forward(self, in_idx):
+			batch_size, seq_len, = in_idx.shape
+			tok_embeds = self.tok_emb(in_idx)
+			pos_embeds = self.pos_emb(torch.arange(seq_len,device=in_idx.device))
+			x = tok_embeds + pos_embeds
+			x = self.drop_emb(x)
+			x = self.trf_blocks(x)
+			x = self.final_norm(x)
+			logits = self.out_head(x)
+			return logits
+
+class DummyTransformerBlock(nn.Module):
+	def __init__(self, cfg):
+		super().__init__()
+		#Placeholder
+	def forward(self, x):
+		return x
+
+class LayerNorm(nn.Module):
+	def __init__(self, emb_dim):
+		super().__init__()
+		self.eps = 1e-5#epsilon added as a constant to prevent sqrt(0)
+		self.scale = nn.Parameter(torch.ones(emb_dim))
+		self.shift = nn.Parameter(torch.zeros(emb_dim))
+
+	def forward(self, x):
+		mean = x.mean(dim =-1, keepdim=True)
+		var = x.var(dim=-1, keepdim=True, unbiased=False)
+		norm_x = (x-mean)/torch.sqrt(var+self.eps)
+		return self.scale * norm_x + self.shift
+
+def TestingLayerNorm():
+	torch.manual_seed(123)
+	batch_example=torch.randn(2,5)
+	layer=nn.Sequential(nn.Linear(5,6), nn.ReLU())
+	out = layer(batch_example)
+	print(out)
+	'''
+	tensor([[0.2260, 0.3470, 0.0000, 0.2216, 0.0000, 0.0000],
+					[0.2133, 0.2394, 0.0000, 0.5198, 0.3297, 0.0000]],
+				 grad_fn=<ReluBackward0>)
+	'''
+	ln=LayerNorm(emb_dim=5)
+	out_ln=ln(batch_example)
+	mean=out_ln.mean(dim=-1, keepdim=True)
+	var=out_ln.var(dim=-1, unbiased=False, keepdim=True)
+	print(f"Mean:{mean}")
+	print(f"Variance:{var}")
+	'''
+	Mean:tensor([[-2.9802e-08],
+		[ 0.0000e+00]], grad_fn=<MeanBackward1>)
+	Variance:tensor([[1.0000],
+		[1.0000]], grad_fn=<VarBackward0>)
+	'''
+
+class GELU(nn.Module):
+	def __init__(self):
+		super().__init__()
+
+	def forward(self,x):
+		return 0.5*x*(1+torch.tanh(
+			torch.sqrt(torch.tensor(2.0/torch.pi))*
+			(x+0.044715*torch.pow(x,3))
+		))
+
+class FeedForward(nn.Module):
+	def __init__(self,cfg):
+		super().__init__()
+		self.layers=nn.Sequential(
+			nn.Linear(cfg["emb_dim"], 4*cfg["emb_dim"]), #Expansion
+			GELU(),#Activation
+			nn.Linear(4*cfg["emb_dim"], cfg["emb_dim"]),#Contraction
+		)
+	def forward(self, x):
+		return self.layers(x)
+
+def utilize_deep_neural_net():
+	class ExampleDeepNeuralNetwork(nn.Module):
+		def __init__(self, layer_sizes, use_shortcut):
+			super().__init__()
+			self.use_shortcut=use_shortcut
+			self.layers = nn.ModuleList([
+					nn.Sequential(nn.Linear(layer_sizes[0], layer_sizes[1]), GELU()),
+					nn.Sequential(nn.Linear(layer_sizes[1], layer_sizes[2]), GELU()),
+					nn.Sequential(nn.Linear(layer_sizes[2], layer_sizes[3]), GELU()),
+					nn.Sequential(nn.Linear(layer_sizes[3], layer_sizes[4]), GELU()),
+					nn.Sequential(nn.Linear(layer_sizes[4], layer_sizes[5]), GELU())
+			])
+	
+		def forward(self,x):
+			for layer in self.layers:
+			#Compute the output of the furrent layer
+				layer_output=layer(x)
+			#Check if chortcut can be applied
+			if self.use_shortcut and x.shape == layer_output.shape:
+				x=x+layer_output
+			else:
+				x=layer_output
+			return x
+	#Without Shortcut connections:
+	layer_sizes = [3, 3, 3, 3, 3, 1]
+	sample_input = torch.tensor([[1., 0., -1.]])
+	torch.manual_seed(123) # specify random seed for the initial weights for reproducibility
+	model_without_shortcut = ExampleDeepNeuralNetwork(
+	layer_sizes, use_shortcut=False
+	)
+	#Next, we implement a function that computes the gradients in the the model's backward pass:
+	def print_vanishing_gradients(model,x):
+		#Forward pass
+		output = model(x)
+		target = torch.tensor([[0.]])
+		#Calculate loss based on how close the target
+		#and the output are
+		loss=nn.MSELoss()
+		#使用 均方误差损失函数 (MSELoss)，衡量模型输出与目标值的差距。
+		loss=loss(output, target)
+		#bakward pass to calculate the gradients
+		loss.backward()
+		for name, param in model.named_parameters():
+			if 'weight' in name:
+					# Print the mean absolute gradient of the weights
+					print(f"{name} has gradient mean of {param.grad.abs().mean().item()}")
+
+		print_gradients(model_without_shortcut, sample_input)
+		'''
+		layers.0.0.weight has gradient mean of 0.00020173587836325169
+		layers.1.0.weight has gradient mean of 0.00012011159560643137
+		layers.2.0.weight has gradient mean of 0.0007152039906941354
+		layers.3.0.weight has gradient mean of 0.0013988736318424344
+		layers.4.0.weight has gradient mean of 0.005049645435065031
+		'''
+	def use_shortcut_connection():
+		torch.manual_seed(123)
+		model_with_shortcut = ExampleDeepNeuralNetwork(
+		layer_sizes, use_shortcut=True
+		)
+		print_gradients(model_with_shortcut, sample_input)
+		'''
+		layers.0.0.weight has gradient mean of 0.22169792652130127
+		layers.1.0.weight has gradient mean of 0.20694106817245483
+		layers.2.0.weight has gradient mean of 0.32896995544433594
+		layers.3.0.weight has gradient mean of 0.2665732204914093
+		layers.4.0.weight has gradient mean of 1.3258540630340576
+		'''
