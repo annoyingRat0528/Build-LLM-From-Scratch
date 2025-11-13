@@ -501,7 +501,7 @@ tensor([[0.2098, 0.2006, 0.1981, 0.1242, 0.1220, 0.1452],
 		[0.1526, 0.1958, 0.1975, 0.1367, 0.1879, 0.1295],
 		[0.1385, 0.2184, 0.2128, 0.1420, 0.0988, 0.1896]])
 	'''
-	
+
 	#Verify row #2 equals to 1
 	row_2_sum = sum([0.1385, 0.2379, 0.2333, 0.1240, 0.1082, 0.1581])
 	print("Row 2 sum:", row_2_sum)
@@ -561,7 +561,7 @@ def self_attention_mechanism():
 	attn_scores_2=query_2@keys.T
 	print(attn_scores_2)
 	#tensor([1.2705, 1.8524, 1.8111, 1.0795, 0.5577, 1.5440])
-	
+
 	attn_scores = queries @ keys.T #omega
 	print(attn_scores)
 	'''
@@ -605,10 +605,10 @@ tensor([[0.9231, 1.3545, 1.3241, 0.7910, 0.4032, 1.1330],
 			attn_weights = torch.softmax(
 				attn_scores/keys.shape[-1]**0.5, dim=-1
 			)
-	
+
 			context_vec= attn_weights @ values
 			return context_vec
-	
+
 	torch.manual_seed(123)
 	sa_v1 = SelfAttention_v1(d_in, d_out)
 	print(sa_v1(inputs))
@@ -626,17 +626,17 @@ tensor([[0.2996, 0.8053],
 			self.W_query    =       nn.Linear(d_in, d_out, bias=qkv_bias)
 			self.W_key              =       nn.Linear(d_in, d_out, bias=qkv_bias)
 			self.W_value    =       nn.Linear(d_in, d_out, bias=qkv_bias)
-	
+
 		def forward(self,x):
 			keys =  self.W_key(x)
 			queries=self.W_key(x)
 			values= self.W_key(x)
-	
+
 			attn_scores = queries@keys.T
 			attn_weights = torch.softmax(
 				attn_scores/keys.shape[-1]**0.5, dim=-1
 			)
-	
+
 			context_vec= attn_weights @ values
 			return context_vec
 	torch.manual_seed(789)
@@ -782,7 +782,7 @@ class CausalAttention(nn.Module):
 
 		context_vec = attn_weights @ values
 		return context_vec
-		
+
 
 def causal_attention():
 	#Ensuring the code can handle batches consisting of more than 1 input
@@ -856,7 +856,7 @@ class MultiHeadAttentionDefenitive(nn.Module):
 
 	def forward(self,x):
 		b, num_tokens, d_in=x.shape
-		
+
 		keys=self.W_key(x) #Shape: (b, num_tokens, d_out)
 		queries=self.W_query(x)
 		values=self.W_value(x)
@@ -876,7 +876,7 @@ class MultiHeadAttentionDefenitive(nn.Module):
 
 		#Original mask truncated (缩短) to the number of tokens and converted to boolean
 		mask_bool=self.mask.bool()[:num_tokens, :num_tokens]
-		
+
 		#Use the mask to fill attention scores
 		attn_scores.masked_fill_(mask_bool, -torch.inf)
 
@@ -893,16 +893,16 @@ class MultiHeadAttentionDefenitive(nn.Module):
 		return context_vec
 def utilizeMultiheadAttention():
 	torch.manual_seed(123)
-	
+
 	inputs = torch.tensor(
 		[[0.43, 0.15, 0.89,0.55, 0.87, 0.66],  
 		[0.57, 0.85, 0.64, 0.22, 0.58, 0.33], 
 		[0.77, 0.25, 0.10, 0.05, 0.80, 0.55]]
 	)
-	
+
 	batch = torch.stack((inputs, inputs), dim=0)
 	print(batch.shape)
-	
+
 	batch_size, context_length, d_in = batch.shape
 	d_out=6
 	mha=MultiHeadAttentionDefenitive(d_in, d_out, context_length, 0, num_heads=2)
@@ -914,7 +914,7 @@ def utilizeMultiheadAttention():
 	tensor([[[ 0.1569, -0.0873,  0.0210,  0.0215, -0.3243, -0.2518],
 					 [ 0.1117, -0.0547,  0.0406, -0.0213, -0.3251, -0.2993],
 					 [ 0.1196, -0.0491,  0.0318, -0.0635, -0.2788, -0.2578]],
-	
+
 					[[ 0.1569, -0.0873,  0.0210,  0.0215, -0.3243, -0.2518],
 					 [ 0.1117, -0.0547,  0.0406, -0.0213, -0.3251, -0.2993],
 					 [ 0.1196, -0.0491,  0.0318, -0.0635, -0.2788, -0.2578]]],
@@ -948,11 +948,11 @@ class DummyGPTModel(nn.Module):
 			*[DummyTransformerBlock(cfg) for _ in range(cfg["n_layers"])]
 		)
 		#Placeholder for LayerNorm
-		self.final_norm = DummyLayerNorm(cfg["emb_dim"])
+		self.final_norm = LayerNorm(cfg["emb_dim"])
 		self.out_head = nn.Linear(
 			cfg["emb_dim"], cfg["vocab_size"], bias=False
 		)
-		
+
 
 		def forward(self, in_idx):
 			batch_size, seq_len, = in_idx.shape
@@ -983,7 +983,7 @@ class LayerNorm(nn.Module):
 		mean = x.mean(dim =-1, keepdim=True)
 		var = x.var(dim=-1, keepdim=True, unbiased=False)
 		norm_x = (x-mean)/torch.sqrt(var+self.eps)
-		return self.scale * norm_x + self.shift
+		return self.scale * norm_x + self.shift#Trainable Weights
 
 def TestingLayerNorm():
 	torch.manual_seed(123)
@@ -1013,7 +1013,7 @@ class GELU(nn.Module):
 	def __init__(self):
 		super().__init__()
 
-	def forward(self,x):
+	def forward(self,x):#Approximation
 		return 0.5*x*(1+torch.tanh(
 			torch.sqrt(torch.tensor(2.0/torch.pi))*
 			(x+0.044715*torch.pow(x,3))
@@ -1042,7 +1042,7 @@ def utilize_deep_neural_net():
 					nn.Sequential(nn.Linear(layer_sizes[3], layer_sizes[4]), GELU()),
 					nn.Sequential(nn.Linear(layer_sizes[4], layer_sizes[5]), GELU())
 			])
-	
+
 		def forward(self,x):
 			for layer in self.layers:
 			#Compute the output of the furrent layer
@@ -1077,7 +1077,7 @@ def utilize_deep_neural_net():
 					# Print the mean absolute gradient of the weights
 					print(f"{name} has gradient mean of {param.grad.abs().mean().item()}")
 
-		print_gradients(model_without_shortcut, sample_input)
+		print_vanishing_gradients(model_without_shortcut, sample_input)
 		'''
 		layers.0.0.weight has gradient mean of 0.00020173587836325169
 		layers.1.0.weight has gradient mean of 0.00012011159560643137
@@ -1090,7 +1090,7 @@ def utilize_deep_neural_net():
 		model_with_shortcut = ExampleDeepNeuralNetwork(
 		layer_sizes, use_shortcut=True
 		)
-		print_gradients(model_with_shortcut, sample_input)
+		print_vanishing_gradients(model_with_shortcut, sample_input)
 		'''
 		layers.0.0.weight has gradient mean of 0.22169792652130127
 		layers.1.0.weight has gradient mean of 0.20694106817245483
@@ -1098,3 +1098,50 @@ def utilize_deep_neural_net():
 		layers.3.0.weight has gradient mean of 0.2665732204914093
 		layers.4.0.weight has gradient mean of 1.3258540630340576
 		'''
+
+class TransformerBlock(nn.Module):
+	def __init__(self, cfg):
+		super().__init__()
+		self.att = MultiHeadAttentionDefenitive(
+			d_in=cfg["emb_dim"],
+			d_out=cfg["emb_dim"],
+			context_length=["context_length"],
+			num_heads=cfg["n_heads"],
+			dropout=["drop_rate"],
+			qkv_bias=["qkv_bias"]
+		)
+		self.ff = FeedForward(cfg)
+		self.norm1 = LayerNorm(cfg["emb_dim"])
+		self.norm2 = LayerNorm(cfg["emb_dim"])
+		self.drop_shortcut = nn.Dropout(cfg["drop_rate"])
+
+	def forward(self,x):
+		#Shortcut connection for attention block
+		shortcut=x
+		x=self.norm1(x)
+		x=self.att(x)	#Shape: [batch_size, num_tokens, emb_size]
+		x=self.drop_shortcut(x)
+		x = x+shortcut	#Add the original input back
+
+		#Shortcut connection for feed forward block
+		shortcut = x
+		x=self.norm2(x)
+		x=self.ff(x)
+		x=self.drop_shortcut(x)
+		x=x+shortcut 	#Add the original input back\
+
+		return x
+
+
+def Try_Transformer():
+	x = torch.rand(2,4,768) #A
+	block = TransformerBlock(GPT_CONFIG_124M)
+	output=block(x)
+	print("Input shape:", x.shape)
+	print("Output shape:", output.shape)
+	'''
+	Input shape: torch.Size([2, 4, 768])
+	Output shape: torch.Size([2, 4, 768])
+	'''
+
+Try_Transformer()
