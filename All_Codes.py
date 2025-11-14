@@ -164,7 +164,7 @@ class SimpleTokenizerV2:
 #preprocess_and_tokenize('expv2')
 
 
-def tiktoken():
+def tiktoken_example():
 	import importlib, tiktoken
 	tokenizer = tiktoken.get_encoding("gpt2")
 	integers = tokenizer.encode("Akwirw ier")
@@ -938,7 +938,7 @@ import torch.nn as nn
 
 class DummyGPTModel(nn.Module):
 	def __init__(self, cfg):
-		super().__init__
+		super().__init__()
 		self.tok_emb = nn.Embedding(cfg["vocab_size"], cfg["emb_dim"])#Row, Columns
 		self.pos_emb=nn.Embedding(cfg["context_length"], cfg["emb_dim"])
 		self.drop_emb=nn.Dropout(cfg["drop_rate"])
@@ -1105,10 +1105,10 @@ class TransformerBlock(nn.Module):
 		self.att = MultiHeadAttentionDefenitive(
 			d_in=cfg["emb_dim"],
 			d_out=cfg["emb_dim"],
-			context_length=["context_length"],
+			context_length=cfg["context_length"],
 			num_heads=cfg["n_heads"],
-			dropout=["drop_rate"],
-			qkv_bias=["qkv_bias"]
+			dropout=cfg["drop_rate"],
+			qkv_bias=cfg["qkv_bias"]
 		)
 		self.ff = FeedForward(cfg)
 		self.norm1 = LayerNorm(cfg["emb_dim"])
@@ -1128,9 +1128,10 @@ class TransformerBlock(nn.Module):
 		x=self.norm2(x)
 		x=self.ff(x)
 		x=self.drop_shortcut(x)
-		x=x+shortcut 	#Add the original input back\
+		x=x+shortcut 	#Add the original input back
 
 		return x
+		#2*4*768
 
 
 def Try_Transformer():
@@ -1144,4 +1145,144 @@ def Try_Transformer():
 	Output shape: torch.Size([2, 4, 768])
 	'''
 
-Try_Transformer()
+	batch = torch.tensor([
+		[6109, 3626, 6100, 345],  # Sample 1
+		[6109, 1110, 6622, 257],  # Sample 2
+])
+
+	torch.manual_seed(123)
+	model=GPTModel(GPT_CONFIG_124M)
+	out=model(batch)
+	print("Input batch:\n", batch)
+	print("\nOutput shape:", out.shape)
+	print(out)
+	'''
+	Input shape: torch.Size([2, 4, 768])
+	Output shape: torch.Size([2, 4, 768])
+	Input batch:
+	tensor([[6109, 3626, 6100,  345],
+			[6109, 1110, 6622,  257]])
+
+	Output shape: torch.Size([2, 4, 50257])
+	tensor([[[ 0.3613,  0.4222, -0.0711,  ...,  0.3483,  0.4661, -0.2838],
+			[-0.1792, -0.5660, -0.9485,  ...,  0.0477,  0.5181, -0.3168],
+			[ 0.7120,  0.0332,  0.1085,  ...,  0.1018, -0.4327, -0.2553],
+			[-1.0076,  0.3418, -0.1190,  ...,  0.7195,  0.4023,  0.0532]],
+
+			[[-0.2564,  0.0900,  0.0335,  ...,  0.2659,  0.4454, -0.6806],
+			[ 0.1230,  0.3653, -0.2074,  ...,  0.7705,  0.2710,  0.2246],
+			[ 1.0558,  1.0318, -0.2800,  ...,  0.6936,  0.3205, -0.3178],
+			[-0.1565,  0.3926,  0.3288,  ...,  1.2630, -0.1858,  0.0388]]],
+		grad_fn=<UnsafeViewBackward0>)
+	'''
+	total_params = sum(p.numel() for p in model.parameters())
+	print(f"Total parameters in GPT-124M model: {total_params}")
+	#Total parameters in GPT-124M model: 163009536
+	#Weight Tying, which means the GPT model is reusing the weights from the token embedding layer in its output layer
+	print("Token embedding layer shape:", model.tok_emb.weight.shape)
+	print("Output layer shape:", model.out_head.weight.shape)
+	#Token embedding layer shape: torch.Size([50257, 768])
+	#Output layer shape: torch.Size([50257, 768])
+	#Removing the output layer parameter count from the total parameter count:
+	total_params_gpt2=total_params-sum(p.numel() for p in model.out_head.parameters())
+	print(f"Number of trainable parameters considering weight typing: {total_params_gpt2}")
+	#Number of trainable parameters considering weight typing: 124412160
+
+	total_size_bytes = total_params * 4
+	total_size_mb = total_size_bytes / (1024*1024)
+	print(f"Total size of the model: {total_size_mb}")
+	#otal size of the model: 621.83203125
+
+
+
+class GPTModel(nn.Module):
+	def __init__(self, cfg):
+		super().__init__()
+		self.tok_emb = nn.Embedding(cfg["vocab_size"], cfg["emb_dim"])
+		self.pos_emb=nn.Embedding(cfg["context_length"], cfg["emb_dim"])
+		self.drop_emb=nn.Dropout(cfg["drop_rate"])
+
+		self.trf_blocks=nn.Sequential(
+			*[TransformerBlock(cfg) for _ in range(cfg["n_layers"])]
+		)
+
+		self.final_norm = LayerNorm(cfg["emb_dim"])
+		self.out_head = nn.Linear(
+			cfg["emb_dim"], cfg["vocab_size"], bias=False
+		)
+
+	def forward(self, in_idx):
+		batch_size, seq_len, = in_idx.shape
+		tok_embeds = self.tok_emb(in_idx)
+		pos_embeds = self.pos_emb(torch.arange(seq_len,device=in_idx.device))
+		x = tok_embeds + pos_embeds
+		x = self.drop_emb(x)
+		x = self.trf_blocks(x)
+		x = self.final_norm(x)
+		logits = self.out_head(x)
+		return logits
+
+
+torch.manual_seed(123)
+model=GPTModel(GPT_CONFIG_124M)
+def generate_text_simple(model, idx, max_new_tokens, context_size):
+	#idx is (batch, n_tokens) array of indices in the current context
+	'''Input batch:
+	batch = torch.tensor([
+		[6109, 3626, 6100, 345],  # Sample 1
+		[6109, 1110, 6622, 257],  # Sample 2
+])
+	'''
+	for _ in range(max_new_tokens):
+		#Crop current context if it exceeds the supported context size
+		#E.g., if LLM supports only 5 tokens, and the context size is 10
+		#Then only the last 5 tokens are used as context
+
+		idx_cond=idx[:, -context_size:]
+
+		#Get the predictions
+		with torch.no_grad():
+			logits = model(idx_cond) # batch, n_tokens, vocab_size
+
+		#Focus on the last time step
+		#(batch, n_tokens, vocab_size) becomes (batch, vocab_size)
+		logits=logits[:, -1, :]
+
+		#Apply softmax to get probabilities
+		#In theory, this step is skippale, where the torch.argmax() can also directly obtain a maximum value within the not normalized logits
+		probas = torch.softmax(logits, dim=-1) #(batch, vocab_size)
+
+		#Get the index of the vocab entry with the highest probability value
+		idx_next = torch.argmax(probas, dim=-1, keepdim=True) #(batch,1)
+
+		#Append sampled index to the running sequence
+		idx = torch.cat((idx, idx_next), dim=-1) #(batch, n_tokens+1)
+	return idx
+
+def test_generation():
+	start_context="Hello, I am"
+	tokenizer = tiktoken.get_encoding("gpt2")
+	encoded = tokenizer.encode(start_context)
+	print("encoded:", encoded)
+	encoded_tensor = torch.tensor(encoded).unsqueeze(0)
+	print("encoded_tensor.shape:", encoded_tensor.shape)
+	'''
+	encoded: [15496, 11, 314, 716]
+	encoded_tensor.shape: torch.Size([1, 4])
+	'''
+	model.eval()
+	out = generate_text_simple(
+		model=model,
+		idx=encoded_tensor,
+		max_new_tokens=6,
+		context_size=GPT_CONFIG_124M["context_length"]
+	)
+	print("Output:", out)
+	print("Output length:", len(out[0]))
+
+	decoded_text = tokenizer.decode(out.squeeze(0).tolist())
+	print(decoded_text)
+	#Hello, I am Featureiman Byeswickattribute argue
+	#We have not yet trained this model, so output is completely random.
+
+test_generation()
